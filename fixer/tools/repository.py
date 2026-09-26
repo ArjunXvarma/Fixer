@@ -1,7 +1,15 @@
 from pathlib import Path
 import subprocess
 
-IGNORED_DIRS = {".git", ".venv", "__pycache__", "node_modules", "build", "dist"}
+IGNORED_DIRS = {
+    ".git",
+    ".venv",
+    "__pycache__",
+    "node_modules",
+    "build",
+    "dist",
+    ".pytest_cache",
+}
 
 
 def list_files(repo_path: str) -> list[str]:
@@ -12,10 +20,14 @@ def list_files(repo_path: str) -> list[str]:
         if not path.is_file():
             continue
 
-        if any(part in IGNORED_DIRS for part in path.parts):
+        relative = path.relative_to(root)
+
+        # Check the relative parts, so a directory above the repo that happens
+        # to be named "build" doesn't hide the whole repository.
+        if any(part in IGNORED_DIRS for part in relative.parts):
             continue
 
-        files.append(str(path.relative_to(root)))
+        files.append(str(relative))
 
     return sorted(files)
 
