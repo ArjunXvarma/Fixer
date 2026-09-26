@@ -1,11 +1,13 @@
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional
+from typing import List, Dict, Annotated
+from langgraph.graph.message import add_messages
 
 
 @dataclass
 class AgentState:
     task: str
     repo_path: str
+    messages: Annotated[list, add_messages]
     plan: List[str] = field(default_factory=list)
     files_inspected: List[str] = field(default_factory=list)
     files_modified: List[str] = field(default_factory=list)
