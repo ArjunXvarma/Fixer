@@ -10,7 +10,7 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from fixer.agent.state import AgentState
+from fixer.agent.state import AgentState, Plan
 from fixer.architectures import ARCHITECTURES
 
 DEFAULT_REPO = str(Path(__file__).resolve().parents[1] / "test-repo")

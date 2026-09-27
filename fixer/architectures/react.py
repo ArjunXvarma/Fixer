@@ -1,11 +1,3 @@
-"""
-ReAct: one agent node that thinks and calls tools until it stops asking.
-
-    START → agent ⇄ tools → END
-
-The order of work is a suggestion in the prompt. Nothing enforces it.
-"""
-
 import time
 from functools import partial
 
