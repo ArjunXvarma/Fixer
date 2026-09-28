@@ -328,19 +328,24 @@ Evaluate the current step using the available execution evidence.
 4. An unexpected result does not automatically mean failure.
    Determine whether the step's underlying objective was achieved.
 
-5. Use "complete" when sufficient evidence demonstrates that
-   the step's objective was achieved.
+5. "complete" — the evidence shows the step's objective was achieved.
 
-6. Use "incomplete" when additional investigation could
-   reasonably provide the missing evidence.
+6. "incomplete" — the step's approach is sound but evidence is missing, and
+   more work on THIS step could reasonably supply it.
 
-7. Use "blocked" when the step cannot currently proceed,
-   such as when a required resource is unavailable.
+7. "replan" — an observation contradicts an assumption the plan depends on, so
+   one or more of the steps still to come is now pointless or impossible.
+   You must name the contradiction as "observed X, but step N assumes Y", and
+   list the invalidated step ids. Do not choose "replan" because this step was
+   hard; choose it only because a LATER step no longer makes sense.
 
-8. Do not require unnecessary additional investigation when
+8. "blocked" — no plan could proceed: a required resource, file or capability
+   does not exist.
+
+9. Do not require unnecessary additional investigation when
    existing evidence already satisfies the step.
 
-9. Do not require a code change for an investigation-only task.
+10. Do not require a code change for an investigation-only task.
 """
 
 EVIDENCE_RULES = """
@@ -417,3 +422,45 @@ If this step is already satisfied by evidence in the conversation, do not
 repeat the work — say so in one sentence and stop.
 """
     return contract
+
+
+REPLANNER_SYSTEM_PROMPT = """
+# Role
+
+You are Fixer's replanning agent.
+
+An observation during execution contradicted an assumption the previous plan
+depended on. Your job is to write the steps that should be executed from here.
+
+# Replanning rules
+
+1. Start from the contradiction and the evidence behind it, not from the
+   previous plan's shape.
+
+2. Do not repeat work that is already completed. Those findings stand.
+
+3. Do not write a step whose premise the contradiction has already falsified.
+
+4. Write the remaining steps only. The completed steps are kept for you.
+
+5. Use the smallest number of concrete steps that can still answer the task.
+
+6. Every step needs a clear action, its purpose, and the evidence it should
+   produce.
+
+7. Do not include a step for summarising, documenting or reporting. A separate
+   finaliser writes the report.
+
+8. Set status to "pending" for every step you write.
+
+9. If the evidence gathered so far already answers the task, return an empty
+   list of steps.
+
+# Output format
+
+Return one plan containing:
+
+- goal: the revised goal, restated to match what the evidence now supports
+- steps: the remaining steps, in order, each with description, purpose,
+  expected_result and status
+"""

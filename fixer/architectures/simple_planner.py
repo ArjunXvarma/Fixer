@@ -21,6 +21,7 @@ from fixer.agent.prompts import (
     VERIFICATION_RULES,
     VERIFIER_ROLE,
     get_planner_step_prompt,
+    REPLANNER_SYSTEM_PROMPT,
 )
 from fixer.agent.state import AgentState, Plan, VerificationResult
 from fixer.agent.tools import TOOLS
@@ -29,6 +30,7 @@ from fixer.agent.tools import TOOLS
 MAX_ITERATIONS = 20
 MAX_TOOL_CALLS = 25
 MAX_STEP_RETRIES = 2
+MAX_REPLANS = 2
 
 PLANNER_SYSTEM_PROMPT = "\n".join(
     [
@@ -180,6 +182,17 @@ def verifier(state: AgentState, model) -> dict:
         for previous in state.plan["steps"][: state.current_step]
     ]
 
+    # A contradiction is measured against the steps still to come, so the
+    # verifier has to be shown them.
+    remaining_steps = [
+        {
+            "id": upcoming["id"],
+            "description": upcoming["description"],
+            "expected_result": upcoming["expected_result"],
+        }
+        for upcoming in state.plan["steps"][state.current_step + 1 :]
+    ]
+
     context = f"""
 Original task:
 {state.task}
@@ -195,6 +208,10 @@ Expected result:
 
 Previously completed steps:
 {previous_results}
+
+Steps still to come (a contradiction is an observation that makes one of
+these pointless or impossible):
+{remaining_steps}
 
 Evaluate the current step using the execution messages
 and tool observations provided.
@@ -217,6 +234,14 @@ and tool observations provided.
 
     for item in result.missing_evidence:
         print(f"[VERIFIER] Missing: {item}")
+
+    if result.verdict == "replan" and not (
+        result.contradiction and result.invalidated_steps
+    ):
+        print(
+            f"[VERIFIER] replan without a named contradiction -> treating as incomplete"
+        )
+        result = result.model_copy(update={"verdict": "incomplete"})
 
     return {
         "verification": result,
@@ -244,7 +269,9 @@ def advance(state: AgentState) -> dict:
 def finalize(state: AgentState, model) -> dict:
     steps = state.plan["steps"]
     done = sum(1 for step in steps if step["status"] == "completed")
-    unfinished = done < len(steps)
+    # An empty plan means a replan discarded everything: nothing was verified,
+    # so the report must not present itself as a finished investigation.
+    unfinished = not steps or done < len(steps)
 
     print(
         f"\n[FINALIZE] {done}/{len(steps)} steps completed, "
@@ -266,6 +293,63 @@ def finalize(state: AgentState, model) -> dict:
     )
 
     return {"messages": [response], "status": "blocked" if unfinished else "completed"}
+
+
+def replanner(state: AgentState, model) -> dict:
+    result = state.verification
+    invalid = set(result.invalidated_steps)
+
+    completed_steps = [
+        s
+        for s in state.plan["steps"]
+        if s["status"] == "completed" and s["id"] not in invalid
+    ]
+    response = model.invoke(
+        [
+            ("system", REPLANNER_SYSTEM_PROMPT),
+            (
+                "user",
+                f"""
+Original task:
+{state.task}
+
+Previous goal:
+{state.plan["goal"]}
+
+Steps already completed (do not repeat these):
+{[step["description"] for step in completed_steps]}
+
+What contradicted the old plan:
+{result.contradiction}
+
+The evidence behind that contradiction:
+{result.evidence}
+
+Write the remaining steps only, starting from where the evidence now points.
+""",
+            ),
+        ]
+    )
+
+    new_steps = [{**step, "status": "pending"} for step in response["steps"]]
+
+    # Renumber everything, so ids stay 1..n and a dropped completed step
+    # cannot leave two steps sharing an id.
+    steps = [
+        {**step, "id": position + 1}
+        for position, step in enumerate(completed_steps + new_steps)
+    ]
+
+    print(f"[REPLAN] {result.contradiction}")
+    print(f"[REPLAN] kept {len(completed_steps)} steps, {len(new_steps)} new")
+    return {
+        "plan": {"goal": response["goal"], "steps": steps},
+        "current_step": len(completed_steps),
+        "verification": None,
+        "step_retries": 0,
+        "replans": state.replans + 1,
+        "step_start_message_index": len(state.messages),
+    }
 
 
 def decide_tool_call(state: AgentState) -> str:
@@ -295,6 +379,12 @@ def route_verification(state: AgentState) -> str:
     if result.verdict == "complete":
         return "advance"
 
+    if result.verdict == "replan":
+        if state.replans >= MAX_REPLANS:
+            print("[ROUTER] Replan budget exhausted.")
+            return "blocked"
+        return "replan"
+
     if state.step_retries > MAX_STEP_RETRIES:
         print(f"[ROUTER] Step retry budget ({MAX_STEP_RETRIES}) exhausted.")
         return "blocked"
@@ -305,6 +395,16 @@ def route_verification(state: AgentState) -> str:
 
     print(f"[ROUTER] Retrying step (attempt {state.step_retries + 1}).")
     return "retry"
+
+
+def after_replan(state: AgentState) -> str:
+    if state.current_step < len(state.plan["steps"]):
+        return "agent"
+
+    # Replanning rule 9 allows an empty remainder when the evidence already
+    # answers the task. Going to the agent here would index past the plan.
+    print("\n[ROUTER] Replan left nothing to execute. Finalising.")
+    return "finalize"
 
 
 def after_advance(state: AgentState) -> str:
@@ -333,6 +433,10 @@ def build():
             ),
         ),
     )
+    graph.add_node(
+        "replanner",
+        partial(replanner, model=build_model(tools=None).with_structured_output(Plan)),
+    )
     graph.add_node("advance", advance)
     graph.add_node("finalize", partial(finalize, model=build_model(tool_choice="none")))
 
@@ -349,7 +453,16 @@ def build():
     graph.add_conditional_edges(
         "verifier",
         route_verification,
-        {"advance": "advance", "retry": "agent", "blocked": "finalize"},
+        {
+            "advance": "advance",
+            "retry": "agent",
+            "blocked": "finalize",
+            "replan": "replanner",
+        },
+    )
+
+    graph.add_conditional_edges(
+        "replanner", after_replan, {"agent": "agent", "finalize": "finalize"}
     )
 
     graph.add_conditional_edges(

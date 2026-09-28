@@ -22,15 +22,24 @@ class Plan(TypedDict):
 
 
 class VerificationResult(BaseModel):
-    verdict: Literal["complete", "incomplete", "blocked"]
-
+    verdict: Literal["complete", "incomplete", "replan", "blocked"]
     reason: str = Field(description="Why this verdict is justified")
-
     evidence: list[str] = Field(
         description="Specific observations supporting the verdict"
     )
-
     missing_evidence: list[str] = Field(description="Evidence still required, if any")
+
+    contradiction: str | None = Field(
+        default=None,
+        description=(
+            "Required for 'replan'. State the observation, then the plan "
+            "assumption it falsifies: 'observed X, but step N assumes Y'."
+        ),
+    )
+    invalidated_steps: list[int] = Field(
+        default_factory=list,
+        description="Required for 'replan'. Ids of steps that are no longer valid.",
+    )
 
 
 @dataclass
@@ -41,6 +50,7 @@ class AgentState:
     verification: VerificationResult | None = None
     step_start_message_index: int = 0
     step_retries: int = 0
+    replans: int = 0
     plan: Plan = field(default_factory=lambda: Plan(goal="", steps=[]))
     files_inspected: List[str] = field(default_factory=list)
     files_modified: List[str] = field(default_factory=list)
