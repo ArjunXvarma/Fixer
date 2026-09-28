@@ -16,15 +16,14 @@ from fixer.architectures import ARCHITECTURES
 DEFAULT_REPO = str(Path(__file__).resolve().parents[1] / "test-repo")
 
 DEFAULT_TASK = """
-Investigate the failing Tribonacci tests.
-
-Do not modify any files.
+Fix the Tribonacci implementation so that all tests pass.
 
 Determine:
 1. Which tests are failing.
 2. Which implementation is responsible.
 3. What the expected behavior appears to be.
 4. What the likely root cause is.
+5. What files to change
 """
 
 

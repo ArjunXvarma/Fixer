@@ -97,7 +97,6 @@ def planner(state: AgentState, model) -> dict:
     return {
         "plan": response,
         "current_step": 0,
-        # Step 1's evidence starts after everything already in the history.
         "step_start_message_index": len(state.messages),
     }
 
@@ -124,7 +123,9 @@ def agent(state: AgentState, model) -> dict:
     )
 
     iteration = state.iteration + 1
-    retrying = state.verification is not None
+    retrying = (
+        state.verification is not None and state.verification.verdict == "incomplete"
+    )
 
     print(f"\n{'=' * 70}")
     print(f"[AGENT] Iteration {iteration} | step {step['id']}/{total}", end="")
@@ -269,8 +270,6 @@ def advance(state: AgentState) -> dict:
 def finalize(state: AgentState, model) -> dict:
     steps = state.plan["steps"]
     done = sum(1 for step in steps if step["status"] == "completed")
-    # An empty plan means a replan discarded everything: nothing was verified,
-    # so the report must not present itself as a finished investigation.
     unfinished = not steps or done < len(steps)
 
     print(

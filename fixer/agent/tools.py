@@ -1,10 +1,3 @@
-"""
-The tools the LLM can call.
-
-repo_path is injected from the graph state, so the model never sees it and
-never chooses it. Everything the model passes is relative to the repo root.
-"""
-
 from typing import Annotated
 
 from langchain_core.tools import tool
@@ -15,8 +8,8 @@ from fixer.tools.repository import list_files, git_diff
 from fixer.tools.search import search_code
 from fixer.tools.shell import run_command
 from fixer.tools.testing import run_tests
+from fixer.tools.file_modification import apply_patch
 
-# Filled in by ToolNode from AgentState.repo_path; invisible to the model.
 RepoPath = Annotated[str, InjectedState("repo_path")]
 
 
@@ -115,6 +108,42 @@ def run_command_tool(
     return result
 
 
+@tool
+def apply_patch_tool(patch: str, repo_path: RepoPath) -> dict:
+    """
+    Apply a unified diff to the repository.
+
+    Read a file before patching it, and write the diff against exactly what you
+    read: a/ and b/ path prefixes, unchanged context lines copied verbatim, and
+    hunk headers whose start lines and counts match the file.
+
+    Args:
+        patch: The unified diff, for example
+
+            --- a/src/testpkg/tribonacci.py
+            +++ b/src/testpkg/tribonacci.py
+            @@ -10,3 +10,3 @@
+                 trib_history = [1, 1, 2, None]
+            -    if n < 3:
+            +    if n < 3 and n > 0:
+
+    The result's "status" says what happened:
+    - "applied": the files changed.
+    - "unchanged": the repository already contained this change.
+    - "failed": the diff did not match the files. Re-read the file and rebuild
+      the diff from its actual contents rather than guessing again.
+    - "error": the diff could not be parsed as a unified diff.
+
+    "diagnostics" names the hunk that failed and what it expected.
+
+    Applying a patch is not evidence that it works. Run run_tests_tool after.
+    """
+
+    print(f"\n[TOOL] apply_patch for diff \n{patch}\n")
+
+    return apply_patch(repo_path, patch)
+
+
 TOOLS = [
     list_files_tool,
     read_file_tool,
@@ -122,4 +151,5 @@ TOOLS = [
     git_diff_tool,
     run_command_tool,
     run_tests_tool,
+    apply_patch_tool,
 ]
