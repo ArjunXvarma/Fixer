@@ -5,7 +5,7 @@ from langchain_core.messages import AIMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode
 
-from fixer.agent.llm import build_model
+from fixer.agent.llm import build_model, build_structured_model
 from fixer.agent.prompts import (
     EVIDENCE_RULES,
     PLAN_OBJECTIVE,
@@ -155,7 +155,7 @@ def agent(state: AgentState, model) -> dict:
         response = AIMessage(content=f"Step {step['id']} needed no further work.")
 
     for call in response.tool_calls:
-        print(f"  → {call['name']} {call['args']}")
+        print(f"  -> {call['name']} {call['args']}")
 
     if not response.tool_calls:
         print(f"[AGENT] {response.text.strip()[:200]}")
@@ -163,7 +163,7 @@ def agent(state: AgentState, model) -> dict:
     update = {"messages": [response], "iteration": iteration}
 
     if step["status"] == "pending":
-        print(f"[PLAN] Step {step['id']} pending → running")
+        print(f"[PLAN] Step {step['id']} pending -> running")
         update["plan"] = with_status(plan, index, "running")
 
     return update
@@ -256,7 +256,7 @@ def advance(state: AgentState) -> dict:
     index = state.current_step
     step = state.plan["steps"][index]
 
-    print(f"[PLAN] Step {step['id']} running → completed")
+    print(f"[PLAN] Step {step['id']} running -> completed")
 
     return {
         "plan": with_status(state.plan, index, "completed"),
@@ -400,8 +400,6 @@ def after_replan(state: AgentState) -> str:
     if state.current_step < len(state.plan["steps"]):
         return "agent"
 
-    # Replanning rule 9 allows an empty remainder when the evidence already
-    # answers the task. Going to the agent here would index past the plan.
     print("\n[ROUTER] Replan left nothing to execute. Finalising.")
     return "finalize"
 
@@ -419,7 +417,7 @@ def build():
 
     graph.add_node(
         "planner",
-        partial(planner, model=build_model(tools=None).with_structured_output(Plan)),
+        partial(planner, model=build_structured_model(Plan)),
     )
     graph.add_node("agent", partial(agent, model=build_model()))
     graph.add_node("tools", ToolNode(TOOLS))
@@ -427,14 +425,12 @@ def build():
         "verifier",
         partial(
             verifier,
-            model=build_model(tools=None).with_structured_output(
-                VerificationResult, method="json_schema"
-            ),
+            model=build_structured_model(VerificationResult),
         ),
     )
     graph.add_node(
         "replanner",
-        partial(replanner, model=build_model(tools=None).with_structured_output(Plan)),
+        partial(replanner, model=build_structured_model(Plan)),
     )
     graph.add_node("advance", advance)
     graph.add_node("finalize", partial(finalize, model=build_model(tool_choice="none")))

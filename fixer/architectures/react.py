@@ -51,7 +51,7 @@ def agent(state: AgentState, model) -> dict:
     print(f"[AGENT] Gemini responded in {time.perf_counter() - start:.2f}s")
 
     for call in response.tool_calls:
-        print(f"  → {call['name']} {call['args']}")
+        print(f"  -> {call['name']} {call['args']}")
 
     if not response.tool_calls:
         print("[AGENT] Final response received.")
