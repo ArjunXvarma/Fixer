@@ -12,6 +12,7 @@ from pathlib import Path
 
 from fixer.agent.state import AgentState, Plan
 from fixer.architectures import ARCHITECTURES
+from fixer.sandbox import SANDBOXES
 
 DEFAULT_REPO = str(Path(__file__).resolve().parents[1] / "test-repo")
 
@@ -47,6 +48,16 @@ def run(arch: str, repo_path: str, task: str) -> dict:
     return result
 
 
+def run_sandboxed(arch: str, repo_path: str, task: str, sandbox: str) -> dict:
+    with SANDBOXES[sandbox]() as box:
+        box.copy_repo(repo_path)
+
+        result = run(arch, box.workdir, task)
+        result["diff"] = box.diff()
+
+        return result
+
+
 def report(arch: str, result: dict) -> None:
     """The numbers to compare architectures on."""
 
@@ -68,16 +79,33 @@ def report(arch: str, result: dict) -> None:
     print("=" * 70)
     print(result["messages"][-1].text or "[no answer]")
 
+    if result.get("diff"):
+        print(f"\n{'=' * 70}")
+        print("[FIXER] the agent changed:")
+        print("=" * 70)
+        print(result["diff"])
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a Fixer architecture.")
     parser.add_argument("--arch", default="react", choices=sorted(ARCHITECTURES))
     parser.add_argument("--repo", default=DEFAULT_REPO)
     parser.add_argument("--task", default=DEFAULT_TASK)
+    parser.add_argument(
+        "--sandbox",
+        default="local",
+        choices=["none", *sorted(SANDBOXES)],
+        help="work in a disposable copy (default) or directly in --repo",
+    )
 
     args = parser.parse_args()
 
-    report(args.arch, run(args.arch, args.repo, args.task))
+    if args.sandbox == "none":
+        result = run(args.arch, args.repo, args.task)
+    else:
+        result = run_sandboxed(args.arch, args.repo, args.task, args.sandbox)
+
+    report(args.arch, result)
 
 
 if __name__ == "__main__":
