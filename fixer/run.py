@@ -40,7 +40,6 @@ def run(arch: str, repo_path: str, task: str) -> dict:
 
     start = time.perf_counter()
 
-    # Generous: each architecture is expected to stop itself.
     result = agent_loop.invoke(state, config={"recursion_limit": 100})
 
     result["seconds"] = round(time.perf_counter() - start, 1)
