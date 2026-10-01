@@ -2,6 +2,10 @@
 
 > An autonomous software engineering agent that investigates, repairs, tests, and verifies code changes inside disposable repository copies.
 
+[![CI](https://github.com/ArjunXvarma/Fixer/actions/workflows/ci.yml/badge.svg)](https://github.com/ArjunXvarma/Fixer/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 Fixer takes a bug report, plans an investigation, explores the repository with
 tools, applies a patch, runs the test suite, and then **verifies whether its own
 change actually worked** — repairing or re-planning when the evidence says it
@@ -296,7 +300,7 @@ die mid-repair with no report — and if even the final model call fails,
 benchmarks/tasks/<name>/
 ├── task.md          → the prompt the agent receives
 ├── grade_test.py    → the oracle, never visible to the agent
-└── repo/            → optional fixture repo (src/ + tests/)
+└── repo/            → the fixture repository (src/ + tests/)
 ```
 
 **Hidden oracles.** After a run, `grade_test.py` is copied into `_grading/`
@@ -339,9 +343,9 @@ the two values named in the bug report does not pass.
 | `mean_of_empty` | `ZeroDivisionError` where the docstring promises `0.0` | self-contained |
 | `wrong_exception` | Raises bare `Exception`, documented as `KeyError` | self-contained |
 | `strip_prefix` | `lstrip(prefix)` strips a character set, not a prefix | self-contained |
-| `tribonacci` | Returns `None` for `n=0` and `n=3` | needs `test-repo` |
-| `missing_colon` | `SyntaxError` | needs `test-repo` |
-| `existing_lint_error` | `SyntaxError` among pre-existing lint noise | needs `test-repo` |
+| `tribonacci` | Returns `None` for `n=0` and `n=3` | self-contained |
+| `missing_colon` | `SyntaxError` | self-contained |
+| `existing_lint_error` | `SyntaxError` among pre-existing lint noise | self-contained |
 
 **All eight fixtures' own tests pass while the bug is present.** This is
 deliberate. A real run produced six consecutive `complete` verdicts because the
@@ -438,37 +442,41 @@ The hidden oracle then checked that three consecutive calls return `["a"]`,
 ## Installation
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/ArjunXvarma/Fixer.git
 cd Fixer
 
 python3 -m venv .venv
 source .venv/bin/activate
 
-pip install -e .
+pip install -e .                 # Gemini support included
+pip install -e ".[all]"          # also Groq and OpenRouter
 ```
 
-`pyproject.toml` does not yet declare runtime dependencies, so install them
-explicitly:
+Optional extras: `.[groq]`, `.[openrouter]`, `.[all]`.
+
+One external binary is also needed for `search_code_tool`:
 
 ```bash
-pip install langgraph langchain-core python-dotenv pydantic patch-ng pytest \
-            langchain-google-genai        # Gemini
-pip install langchain-groq               # optional: Groq
-pip install langchain-openai             # optional: OpenRouter
+brew install ripgrep             # or: apt install ripgrep
 ```
 
-Also required:
+Verify the install without using any API quota:
 
-- **`pytest`** must be importable by some interpreter on the machine —
-  `run_tests` discovers it and the benchmark oracles need it.
-- **`ripgrep`** (`rg`) for `search_code_tool` (`brew install ripgrep`).
+```bash
+pytest -q                        # 13 smoke tests, no network
+python -m fixer.eval --arch none # every benchmark fixture is still broken
+```
 
 ---
 
 ## Configuration
 
-Create a `.env` file in the repository root. **At least one provider key is
-required.**
+Copy the template and fill in the keys you have. **At least one provider key
+is required** — only the provider in use needs one.
+
+```bash
+cp .env.example .env
+```
 
 ```bash
 # required: one of these, matching the provider in use
@@ -516,6 +524,9 @@ python -m fixer.run --arch autonomous_agent --sandbox none
 
 Each run prints the plan, every tool call, test results, verifier verdicts, the
 final report, and the diff the agent produced.
+
+After `pip install -e .`, the `fixer` and `fixer-eval` console scripts are
+equivalent to `python -m fixer.run` and `python -m fixer.eval`.
 
 ## Running the benchmark
 
@@ -571,10 +582,15 @@ fixer/
 └── run.py                  CLI
 
 benchmarks/
-├── tasks/<name>/           task.md, grade_test.py, optional repo/
+├── tasks/<name>/           task.md, grade_test.py, repo/ fixture
 ├── results.jsonl           one row per run
 ├── EVALUATION.md           evaluation design and rationale
 └── analysis-2026-09-30.md  analysis of a full 8-task sweep
+
+tests/test_smoke.py         13 tests, no API calls
+examples/explore_repo.py    tool layer used directly, without an agent
+.env.example                configuration template
+.github/workflows/ci.yml    install, smoke tests, fixture check
 ```
 
 ---
@@ -629,10 +645,8 @@ tests, that run scores as a fix.
 
 ## Limitations
 
-- **Benchmark scale.** 8 small, purpose-built tasks; 5 self-contained, 3
-  depending on an external fixture. Not comparable to SWE-bench.
-- **`test-repo` is not tracked** (it is in `.gitignore` as a nested repository),
-  so a fresh clone can run only the 5 self-contained tasks until it is provided.
+- **Benchmark scale.** 8 small, self-contained tasks. Not comparable to
+  SWE-bench.
 - **Patch construction is the dominant failure mode.** 46 `apply_patch` attempts
   for one success across the two failing tasks. Context must match byte-for-byte,
   and fixtures without a trailing newline are a known hazard.
@@ -649,8 +663,9 @@ tests, that run scores as a fix.
   unavailability on free tiers; a single call has taken over a minute of retries.
 - **Two known harness defects:** `__pycache__` entries inflate `diff_lines`, and
   `touched_tests` flags added regression tests the same as weakened ones.
-- **No test suite for Fixer itself.** Correctness has been checked by stub-model
-  runs through the real graphs rather than unit tests.
+- **Fixer's own test suite is smoke-level.** 13 tests cover graph compilation,
+  tool schemas, state, fixture integrity and the sandbox lifecycle — not the
+  behaviour of individual nodes.
 
 ---
 
