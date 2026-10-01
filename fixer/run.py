@@ -14,7 +14,9 @@ from fixer.agent.state import AgentState, Plan
 from fixer.architectures import ARCHITECTURES
 from fixer.sandbox import SANDBOXES
 
-DEFAULT_REPO = str(Path(__file__).resolve().parents[1] / "test-repo")
+DEFAULT_REPO = str(
+    Path(__file__).resolve().parents[1] / "benchmarks" / "tasks" / "tribonacci" / "repo"
+)
 
 DEFAULT_TASK = """
 Fix the Tribonacci implementation so that all tests pass.
