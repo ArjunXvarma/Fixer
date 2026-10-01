@@ -5,8 +5,47 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fixer"
 version = "0.1.0"
-description = "Autonomous software engineering agent"
+description = "An autonomous software engineering agent that investigates, repairs, tests and verifies code changes in disposable repository copies"
+readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Arjun Varma" }]
+keywords = ["ai-agent", "langgraph", "autonomous-agent", "code-repair", "llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "langgraph>=1.0",
+    "langchain-core>=1.0",
+    "langchain-google-genai>=4.0",
+    "pydantic>=2.0",
+    "python-dotenv>=1.0",
+    "patch-ng>=1.17",
+    "pytest>=8.0",
+]
+
+[project.optional-dependencies]
+groq = ["langchain-groq>=1.0"]
+openrouter = ["langchain-openai>=1.0"]
+all = ["langchain-groq>=1.0", "langchain-openai>=1.0"]
+
+[project.scripts]
+fixer = "fixer.run:main"
+fixer-eval = "fixer.eval.runner:main"
+
+[project.urls]
+Repository = "https://github.com/ArjunXvarma/Fixer"
 
 [tool.setuptools.packages.find]
 include = ["fixer*"]
+
+[tool.pytest.ini_options]
+# Only Fixer's own tests. Without this, a bare `pytest` would try to collect
+# the deliberately-broken benchmark fixtures under benchmarks/tasks/.
+testpaths = ["tests"]
