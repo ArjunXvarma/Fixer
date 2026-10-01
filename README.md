@@ -4,7 +4,6 @@
 
 [![CI](https://github.com/ArjunXvarma/Fixer/actions/workflows/ci.yml/badge.svg)](https://github.com/ArjunXvarma/Fixer/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 Fixer takes a bug report, plans an investigation, explores the repository with
 tools, applies a patch, runs the test suite, and then **verifies whether its own
@@ -18,21 +17,20 @@ pluggable model providers (Gemini, Groq, OpenRouter).
 **Measured on the included 8-task benchmark** (single architecture,
 `autonomous_agent`, 16 scored runs):
 
-| Metric | Result |
-| --- | ---: |
-| Unique benchmark tasks | 8 |
-| Scored runs | 16 |
-| Runs resolved (hidden oracle passed) | **11 / 16** |
-| Tasks resolved at least once | **7 / 8** |
-| Regressions introduced | **0** |
-| Runs that exhausted their budget | 4 |
-| Runs excluded as provider/API failures | 7 |
-| Tool calls per run | median 11 (range 4–29) |
-| Wall time per run | median 122 s (range 56–163 s) |
+| Metric                                 |                        Result |
+| -------------------------------------- | ----------------------------: |
+| Unique benchmark tasks                 |                             8 |
+| Scored runs                            |                            16 |
+| Runs resolved (hidden oracle passed)   |                   **11 / 16** |
+| Tasks resolved at least once           |                     **7 / 8** |
+| Regressions introduced                 |                         **0** |
+| Runs that exhausted their budget       |                             4 |
+| Runs excluded as provider/API failures |                             7 |
+| Tool calls per run                     |        median 11 (range 4–29) |
+| Wall time per run                      | median 122 s (range 56–163 s) |
 
 These numbers come from `benchmarks/results.jsonl`. This is an **initial
 benchmark of 8 small, purpose-built tasks** — not a SWE-bench-scale evaluation.
-Full analysis: [`benchmarks/analysis-2026-09-30.md`](benchmarks/analysis-2026-09-30.md).
 
 ---
 
@@ -79,20 +77,20 @@ Three properties make this different from a single prompt:
 
 ## What it does
 
-| Capability | Implementation |
-| --- | --- |
-| Planning | A planner node emits a structured `Plan` (goal + ordered steps with purpose, expected result, status) via provider-native structured output |
-| Repository exploration | 7 LangChain tools: list files, read file, regex search (ripgrep), git diff |
-| Code modification | `apply_patch_tool` applies unified diffs with `patch-ng`, returning `applied` / `unchanged` / `failed` / `error` plus the failing hunk |
-| Test execution | `run_tests` discovers a working pytest, configures `PYTHONPATH` for `src/` layouts, and classifies results by `status` **and** `phase` (`collection` vs `run`) |
-| Verification | A verifier node returns a typed verdict — `complete`, `incomplete`, `replan`, `blocked` — with evidence and missing evidence |
-| Repair | A failed step is retried with the verifier's reason and missing evidence named explicitly |
-| Re-planning | A contradiction (an observation that invalidates later steps) rewrites the remaining plan, keeping completed work |
-| Bounded execution | Per-run iteration and tool-call budgets, per-step retry budget, replan budget; every branch has a terminal path |
-| Sandboxing | Each run works in a disposable `git`-initialised copy; the real repository is never modified, and the agent's diff is extracted before teardown |
-| Provider abstraction | Gemini, Groq, and OpenRouter behind one `LLM` class, selected by env var, each with its own structured-output method |
-| Evaluation | 8 tasks, hidden oracle tests, regression detection, test-tampering flag, JSONL results, no-op baseline, stub-model dry runs |
-| Failure isolation | Provider outages are recorded as `infra_error` and excluded from scoring, so API capacity is not charged to the agent |
+| Capability             | Implementation                                                                                                                                                 |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Planning               | A planner node emits a structured `Plan` (goal + ordered steps with purpose, expected result, status) via provider-native structured output                    |
+| Repository exploration | 7 LangChain tools: list files, read file, regex search (ripgrep), git diff                                                                                     |
+| Code modification      | `apply_patch_tool` applies unified diffs with `patch-ng`, returning `applied` / `unchanged` / `failed` / `error` plus the failing hunk                         |
+| Test execution         | `run_tests` discovers a working pytest, configures `PYTHONPATH` for `src/` layouts, and classifies results by `status` **and** `phase` (`collection` vs `run`) |
+| Verification           | A verifier node returns a typed verdict — `complete`, `incomplete`, `replan`, `blocked` — with evidence and missing evidence                                   |
+| Repair                 | A failed step is retried with the verifier's reason and missing evidence named explicitly                                                                      |
+| Re-planning            | A contradiction (an observation that invalidates later steps) rewrites the remaining plan, keeping completed work                                              |
+| Bounded execution      | Per-run iteration and tool-call budgets, per-step retry budget, replan budget; every branch has a terminal path                                                |
+| Sandboxing             | Each run works in a disposable `git`-initialised copy; the real repository is never modified, and the agent's diff is extracted before teardown                |
+| Provider abstraction   | Gemini, Groq, and OpenRouter behind one `LLM` class, selected by env var, each with its own structured-output method                                           |
+| Evaluation             | 8 tasks, hidden oracle tests, regression detection, test-tampering flag, JSONL results, no-op baseline, stub-model dry runs                                    |
+| Failure isolation      | Provider outages are recorded as `infra_error` and excluded from scoring, so API capacity is not charged to the agent                                          |
 
 ---
 
@@ -126,17 +124,17 @@ flowchart TD
     F --> E([report + diff])
 ```
 
-| Node | Role |
-| --- | --- |
-| `planner` | Task → structured `Plan`. Uses a planner-specific role that names no tools, because models that see tool names in a planning prompt try to call them |
-| `agent` | Executes exactly one step per turn. Either requests tools or states the step's result in text — the text is the signal that the step is done |
-| `tools` | LangGraph `ToolNode`; `repo_path` is injected from state, never supplied by the model |
-| `test` | **Deterministic, no model.** Calls `run_tests` directly and records the result, so "did it work" is never the executor's opinion |
-| `verifier` | Judges the current step against that step's messages *and* the test result. Returns a typed verdict |
-| `advance` | Marks the step complete and resets per-step state so the next step starts clean |
-| `repair` | Counts the attempt and sends the step back with the gap named |
-| `replanner` | Rewrites the remaining steps after a contradiction, renumbering the whole plan and keeping completed work |
-| `finalize` | The only node that reports. Falls back to a locally-composed report if the model is unreachable |
+| Node        | Role                                                                                                                                                 |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `planner`   | Task → structured `Plan`. Uses a planner-specific role that names no tools, because models that see tool names in a planning prompt try to call them |
+| `agent`     | Executes exactly one step per turn. Either requests tools or states the step's result in text — the text is the signal that the step is done         |
+| `tools`     | LangGraph `ToolNode`; `repo_path` is injected from state, never supplied by the model                                                                |
+| `test`      | **Deterministic, no model.** Calls `run_tests` directly and records the result, so "did it work" is never the executor's opinion                     |
+| `verifier`  | Judges the current step against that step's messages _and_ the test result. Returns a typed verdict                                                  |
+| `advance`   | Marks the step complete and resets per-step state so the next step starts clean                                                                      |
+| `repair`    | Counts the attempt and sends the step back with the gap named                                                                                        |
+| `replanner` | Rewrites the remaining steps after a contradiction, renumbering the whole plan and keeping completed work                                            |
+| `finalize`  | The only node that reports. Falls back to a locally-composed report if the model is unreachable                                                      |
 
 ### `simple_planner` — plan and verify, no test node
 
@@ -165,12 +163,12 @@ case for whether planning and verification actually help.
 
 ### Budgets
 
-| | `react` | `simple_planner` | `autonomous_agent` |
-| --- | ---: | ---: | ---: |
-| Max iterations | 40 | 20 | 30 |
-| Max tool calls | — | 25 | 40 |
-| Step retries | — | 2 | 2 |
-| Replans | — | 2 | 1 |
+|                | `react` | `simple_planner` | `autonomous_agent` |
+| -------------- | ------: | ---------------: | -----------------: |
+| Max iterations |      40 |               20 |                 30 |
+| Max tool calls |       — |               25 |                 40 |
+| Step retries   |       — |                2 |                  2 |
+| Replans        |       — |                2 |                  1 |
 
 These are deliberately **not** equalised yet, which is why the benchmark below
 reports one architecture rather than a comparison.
@@ -204,22 +202,22 @@ absent from the schema the model sees, and any value the model tries to forge is
 stripped before execution — so the model only ever supplies repository-relative
 paths.
 
-| Tool | Model-visible input | Purpose |
-| --- | --- | --- |
-| `list_files_tool` | — | Repository layout, relative paths, noise directories filtered |
-| `read_file_tool` | `file_path` | File contents (capped at 20,000 characters) |
-| `search_code_tool` | `pattern`, `max_results` | Regex search via `ripgrep --json` |
-| `git_diff_tool` | — | Uncommitted diff |
-| `run_tests_tool` | `test_path`, `timeout` | Runs pytest; owns environment discovery and `PYTHONPATH` |
-| `run_command_tool` | `command` (argv list), `timeout` | Escape hatch for anything no specialised tool covers |
-| `apply_patch_tool` | `patch` (unified diff) | The only write path into the repository |
+| Tool               | Model-visible input              | Purpose                                                       |
+| ------------------ | -------------------------------- | ------------------------------------------------------------- |
+| `list_files_tool`  | —                                | Repository layout, relative paths, noise directories filtered |
+| `read_file_tool`   | `file_path`                      | File contents (capped at 20,000 characters)                   |
+| `search_code_tool` | `pattern`, `max_results`         | Regex search via `ripgrep --json`                             |
+| `git_diff_tool`    | —                                | Uncommitted diff                                              |
+| `run_tests_tool`   | `test_path`, `timeout`           | Runs pytest; owns environment discovery and `PYTHONPATH`      |
+| `run_command_tool` | `command` (argv list), `timeout` | Escape hatch for anything no specialised tool covers          |
+| `apply_patch_tool` | `patch` (unified diff)           | The only write path into the repository                       |
 
 Two implementation details worth noting:
 
 - **`run_tests` encapsulates the test environment.** It locates pytest (repo
   virtualenv → current interpreter → `PATH`), puts `src/` on `PYTHONPATH` for
-  src-layout projects, and distinguishes a *collection* failure (nothing ran —
-  an import or config problem) from a *run* failure (a real assertion). Early
+  src-layout projects, and distinguishes a _collection_ failure (nothing ran —
+  an import or config problem) from a _run_ failure (a real assertion). Early
   versions of the agent wasted calls rediscovering this per run.
 - **`apply_patch` returns a diagnosis, not a boolean.** `patch-ng` explains which
   hunk failed and what it expected, but only through logging; that output is
@@ -243,7 +241,7 @@ Two implementation details worth noting:
 - `__exit__` always tears the copy down, including when the model API fails
   mid-run
 
-**Honest scope:** this is isolation for *experiments*, not security. Commands
+**Honest scope:** this is isolation for _experiments_, not security. Commands
 still execute on the host with the user's permissions. What it guarantees is
 reproducibility — a pristine copy per run, an untouched source repository, and a
 diff as the scoreable artifact. A container-backed `Sandbox` would slot in behind
@@ -259,7 +257,7 @@ rules forbid a final "summarise the findings" step — reporting belongs to
 `finalize`.
 
 **Execution.** The executor works one step at a time under a contract: it is
-responsible for *that step only*, must not execute future steps, must not answer
+responsible for _that step only_, must not execute future steps, must not answer
 the overall task, and signals completion by replying in text with no tool call.
 The graph routes on that signal, and the prompt states the rule explicitly — a
 graph rule the model does not know about is a coin flip.
@@ -271,7 +269,7 @@ contradiction and the invalidated step ids; if it does not, the runtime
 downgrades it to `incomplete` rather than trusting the label.
 
 **Contradiction handling.** `replan` means an observation falsified an assumption
-that *later* steps depend on — not merely that this step was hard. The verifier
+that _later_ steps depend on — not merely that this step was hard. The verifier
 is shown the remaining steps precisely so it can make that judgement, and the
 replanner keeps completed work while rewriting what follows.
 
@@ -291,9 +289,7 @@ die mid-repair with no report — and if even the final model call fails,
 
 ## Evaluation framework
 
-`fixer/eval/` — four modules, ~380 lines. Design rationale:
-[`benchmarks/EVALUATION.md`](benchmarks/EVALUATION.md).
-
+`fixer/eval/` — four modules, ~380 lines.
 **Task format.** A task is a directory; adding one requires no code change:
 
 ```text
@@ -305,23 +301,23 @@ benchmarks/tasks/<name>/
 
 **Hidden oracles.** After a run, `grade_test.py` is copied into `_grading/`
 inside the sandbox and pytest runs on that path only. The agent cannot write the
-test that grades it. Oracles check *documented* behaviour, not just the reported
+test that grades it. Oracles check _documented_ behaviour, not just the reported
 symptom — the `tribonacci` oracle verifies the whole sequence, so special-casing
 the two values named in the bug report does not pass.
 
 **Metrics recorded per run** (one JSON object per line in
 `benchmarks/results.jsonl`):
 
-| Field | Meaning |
-| --- | --- |
-| `resolved` | The hidden oracle passed |
-| `no_regression` | The repository's original tests still pass, checked after restoring `tests/` from the sandbox baseline so rewritten tests cannot hide a regression |
-| `touched_tests` | The diff modified something under `tests/` |
-| `status` | `completed`, `blocked` (budget exhausted), or `infra_error` |
-| `iterations`, `tool_calls`, `by_tool`, `trace` | Cost and the ordered call sequence with each call's first argument |
-| `oracle_status`, `oracle_phase`, `oracle_failed` | Whether the oracle ran at all, and how it failed |
-| `diff_lines`, `diff` | The full patch, so oracles can be improved and old runs re-scored without spending quota |
-| `seconds`, `errors` | Wall time and recorded failures |
+| Field                                            | Meaning                                                                                                                                            |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resolved`                                       | The hidden oracle passed                                                                                                                           |
+| `no_regression`                                  | The repository's original tests still pass, checked after restoring `tests/` from the sandbox baseline so rewritten tests cannot hide a regression |
+| `touched_tests`                                  | The diff modified something under `tests/`                                                                                                         |
+| `status`                                         | `completed`, `blocked` (budget exhausted), or `infra_error`                                                                                        |
+| `iterations`, `tool_calls`, `by_tool`, `trace`   | Cost and the ordered call sequence with each call's first argument                                                                                 |
+| `oracle_status`, `oracle_phase`, `oracle_failed` | Whether the oracle ran at all, and how it failed                                                                                                   |
+| `diff_lines`, `diff`                             | The full patch, so oracles can be improved and old runs re-scored without spending quota                                                           |
+| `seconds`, `errors`                              | Wall time and recorded failures                                                                                                                    |
 
 **Baselines and harness self-checks:**
 
@@ -330,22 +326,22 @@ the two values named in the bug report does not pass.
 - `--dry-run` swaps in a scripted stub model — no API calls, milliseconds — and
   deliberately fixes only some tasks, so a harness that scores everything (or
   nothing) is visible immediately.
-- Oracles were checked to be *satisfiable*: the obvious fix was applied to each
+- Oracles were checked to be _satisfiable_: the obvious fix was applied to each
   task in a sandbox and every oracle passed. An unpassable oracle would make a
   working agent look broken forever.
 
 ### Benchmark tasks
 
-| Task | Bug class | Fixture |
-| --- | --- | --- |
-| `chunk_off_by_one` | Off-by-one drops the final partial chunk | self-contained |
-| `mutable_default` | `def f(x, acc=[])` leaks across calls | self-contained |
-| `mean_of_empty` | `ZeroDivisionError` where the docstring promises `0.0` | self-contained |
-| `wrong_exception` | Raises bare `Exception`, documented as `KeyError` | self-contained |
-| `strip_prefix` | `lstrip(prefix)` strips a character set, not a prefix | self-contained |
-| `tribonacci` | Returns `None` for `n=0` and `n=3` | self-contained |
-| `missing_colon` | `SyntaxError` | self-contained |
-| `existing_lint_error` | `SyntaxError` among pre-existing lint noise | self-contained |
+| Task                  | Bug class                                              | Fixture        |
+| --------------------- | ------------------------------------------------------ | -------------- |
+| `chunk_off_by_one`    | Off-by-one drops the final partial chunk               | self-contained |
+| `mutable_default`     | `def f(x, acc=[])` leaks across calls                  | self-contained |
+| `mean_of_empty`       | `ZeroDivisionError` where the docstring promises `0.0` | self-contained |
+| `wrong_exception`     | Raises bare `Exception`, documented as `KeyError`      | self-contained |
+| `strip_prefix`        | `lstrip(prefix)` strips a character set, not a prefix  | self-contained |
+| `tribonacci`          | Returns `None` for `n=0` and `n=3`                     | self-contained |
+| `missing_colon`       | `SyntaxError`                                          | self-contained |
+| `existing_lint_error` | `SyntaxError` among pre-existing lint noise            | self-contained |
 
 **All eight fixtures' own tests pass while the bug is present.** This is
 deliberate. A real run produced six consecutive `complete` verdicts because the
@@ -359,31 +355,31 @@ every bug announces itself with a red test would hide that failure mode entirely
 
 All real runs to date, `autonomous_agent` only:
 
-| Metric | Value |
-| --- | ---: |
-| Unique tasks | 8 |
-| Agent runs recorded | 23 |
-| Runs excluded (`infra_error`, provider unavailable) | 7 |
-| **Scored runs** | **16** |
-| Runs resolved | **11 / 16** |
-| Tasks resolved at least once | **7 / 8** |
-| Regressions introduced | 0 |
-| Runs that exhausted their budget | 4 |
-| Tool calls | median 11, range 4–29 |
-| Wall time | median 122 s, range 56–163 s |
+| Metric                                              |                        Value |
+| --------------------------------------------------- | ---------------------------: |
+| Unique tasks                                        |                            8 |
+| Agent runs recorded                                 |                           23 |
+| Runs excluded (`infra_error`, provider unavailable) |                            7 |
+| **Scored runs**                                     |                       **16** |
+| Runs resolved                                       |                  **11 / 16** |
+| Tasks resolved at least once                        |                    **7 / 8** |
+| Regressions introduced                              |                            0 |
+| Runs that exhausted their budget                    |                            4 |
+| Tool calls                                          |        median 11, range 4–29 |
+| Wall time                                           | median 122 s, range 56–163 s |
 
 Per task, over scored runs only:
 
-| Task | Scored runs | Resolved | Tool calls |
-| --- | ---: | ---: | --- |
-| `missing_colon` | 3 | 3 | 5, 4, 5 |
-| `mean_of_empty` | 2 | 2 | 20, 7 |
-| `mutable_default` | 2 | 2 | 17, 6 |
-| `strip_prefix` | 1 | 1 | 10 |
-| `wrong_exception` | 1 | 1 | 8 |
-| `chunk_off_by_one` | 2 | 1 | 12, 29 |
-| `tribonacci` | 3 | 1 | 27, 14, 27 |
-| `existing_lint_error` | 2 | 0 | 28, 10 |
+| Task                  | Scored runs | Resolved | Tool calls |
+| --------------------- | ----------: | -------: | ---------- |
+| `missing_colon`       |           3 |        3 | 5, 4, 5    |
+| `mean_of_empty`       |           2 |        2 | 20, 7      |
+| `mutable_default`     |           2 |        2 | 17, 6      |
+| `strip_prefix`        |           1 |        1 | 10         |
+| `wrong_exception`     |           1 |        1 | 8          |
+| `chunk_off_by_one`    |           2 |        1 | 12, 29     |
+| `tribonacci`          |           3 |        1 | 27, 14, 27 |
+| `existing_lint_error` |           2 |        0 | 28, 10     |
 
 **Reading these numbers honestly:**
 
@@ -491,11 +487,11 @@ FIXER_MODEL=gemini-3.5-flash-lite
 
 Provider defaults, from [`fixer/agent/llm.py`](fixer/agent/llm.py):
 
-| Provider | Default model | Structured output | Key |
-| --- | --- | --- | --- |
-| `gemini` | `gemini-3.1-flash-lite` | `json_schema` | `GOOGLE_API_KEY` |
-| `groq` | `openai/gpt-oss-20b` | `function_calling` | `GROQ_API_KEY` |
-| `openrouter` | `openrouter/free` | `function_calling` | `OPENROUTER_API_KEY` |
+| Provider     | Default model           | Structured output  | Key                  |
+| ------------ | ----------------------- | ------------------ | -------------------- |
+| `gemini`     | `gemini-3.1-flash-lite` | `json_schema`      | `GOOGLE_API_KEY`     |
+| `groq`       | `openai/gpt-oss-20b`    | `function_calling` | `GROQ_API_KEY`       |
+| `openrouter` | `openrouter/free`       | `function_calling` | `OPENROUTER_API_KEY` |
 
 The `structured_method` is per provider because it was measured, not assumed:
 Groq's `gpt-oss` models reject `json_schema` structured output intermittently
@@ -547,51 +543,6 @@ python -m fixer.eval --arch react --task strip_prefix
 Each run appends one JSON object to `benchmarks/results.jsonl` (fields described
 above) and prints a per-task summary with the resolved count and the number of
 provider failures excluded.
-
----
-
-## Project structure
-
-```text
-fixer/
-├── agent/
-│   ├── llm.py              provider abstraction (Gemini/Groq/OpenRouter)
-│   ├── state.py            AgentState, Plan, PlanStep, VerificationResult
-│   ├── tools.py            7 LangChain tools, repo_path via InjectedState
-│   └── prompts.py          shared prompt components (role, tool rules, planning,
-│                           verification, reporting)
-├── architectures/
-│   ├── react.py            agent ⇄ tools
-│   ├── simple_planner.py   planner → executor → verifier → repair/replan
-│   └── autonomous_agent.py planner → executor → test → verifier → repair/replan
-├── tools/
-│   ├── filesystem.py       read_file with repository-boundary check
-│   ├── repository.py       list_files, git_diff
-│   ├── search.py           ripgrep JSON search
-│   ├── shell.py            run_command + PYTHONPATH for src/ layouts
-│   ├── testing.py          pytest discovery, status + phase classification
-│   └── file_modification.py  apply_patch via patch-ng
-├── sandbox/
-│   ├── base.py             Sandbox ABC
-│   └── local.py            LocalSandbox: disposable git-initialised copy
-├── eval/
-│   ├── tasks.py            task discovery
-│   ├── score.py            resolved / no_regression / touched_tests
-│   ├── stub.py             scripted model for --dry-run
-│   └── runner.py           task × architecture × repeats → JSONL
-└── run.py                  CLI
-
-benchmarks/
-├── tasks/<name>/           task.md, grade_test.py, repo/ fixture
-├── results.jsonl           one row per run
-├── EVALUATION.md           evaluation design and rationale
-└── analysis-2026-09-30.md  analysis of a full 8-task sweep
-
-tests/test_smoke.py         13 tests, no API calls
-examples/explore_repo.py    tool layer used directly, without an agent
-.env.example                configuration template
-.github/workflows/ci.yml    install, smoke tests, fixture check
-```
 
 ---
 
